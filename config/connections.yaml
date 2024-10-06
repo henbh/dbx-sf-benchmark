@@ -1,0 +1,28 @@
+# connections.yaml
+
+# Replace with your email
+user_email: 'email@example.com'
+
+# Platform-specific connection configurations
+snowflake:
+  user: '${SF_USER}'
+  password: '${SF_PASSWORD}'  # Use environment variable
+  account: '${SF_ACCOUNT}'
+  database: '${SF_DATABASE}'
+  schema: '${SF_SCHEMA}'
+  warehouses:
+    XS: 'WAREHOUSE_XS'
+    S: 'WAREHOUSE_S'
+    M: 'WAREHOUSE_M'
+    L: 'WAREHOUSE_L'
+    XL: 'WAREHOUSE_XL'
+
+databricks:
+  server_hostname: '${DBX_HOST}'
+  access_token: '${DBX_TOKEN}'  # Use environment variable
+  http_paths:
+    XS: '/sql/1.0/warehouses/1234'
+    S: '/sql/1.0/warehouses/5678'
+    M: '/sql/1.0/warehouses/9012'
+    L: '/sql/1.0/warehouses/3456'
+    XL: '/sql/1.0/warehouses/7890'

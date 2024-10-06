@@ -1,0 +1,23 @@
+# intelli
+.idea
+.bsp
+target
+
+# logging
+*.log
+logs
+
+# ENSIME specific
+.ensime_cache/
+.ensime
+
+.DS_Store
+.bloop
+
+#secrets
+secrets
+
+**/.terraform/*
+*.backup
+*.tfstate*
+.user.yml

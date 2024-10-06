@@ -1,0 +1,37 @@
+queries:
+  # Category: Data Profiling Queries
+  data_profiling:
+    - name: 'Iceberg - Total Count Query'  # Descriptive name for the query
+      source_type: 'iceberg'  # Source type: 'iceberg', 'delta', 'combined'
+      is_skipped: false  # Set to true to skip this query during execution
+      use_cached_result: true  # Use cached results if available (true/false)
+      warehouse_type: 'XS'  # Warehouse size/type: 'XS', 'S', 'M', 'L', etc.
+      databricks_query: "SELECT COUNT(*) AS total_count FROM poc.main.example;"  # SQL query for Databricks
+      snowflake_query: "SELECT COUNT(*) AS total_count FROM poc.test.example;"  # SQL query for Snowflake
+
+    - name: 'Delta - Customer Segmentation Query'
+      source_type: 'delta'
+      is_skipped: false
+      use_cached_result: false
+      warehouse_type: 'S'
+      databricks_query: "SELECT segment, COUNT(*) FROM poc.main.example GROUP BY segment;"
+      snowflake_query: "SELECT segment, COUNT(*) FROM oc.main.example GROUP BY segment;"
+
+  # Category: Performance Benchmarking Queries
+  aggregation:
+    - name: 'Iceberg - Large Join Query'
+      source_type: 'iceberg'
+      is_skipped: false
+      use_cached_result: false
+      warehouse_type: 'M'
+      databricks_query: "SELECT a.id, b.value FROM poc.main.example a JOIN poc.main.example2 b ON a.id = b.a_id;"
+      snowflake_query: "SELECT a.id, b.value FROM poc.main.example a JOIN poc.main.example2 b ON a.id = b.a_id;"
+
+    - name: 'Combined - Multi-Source Aggregation'
+      source_type: 'combined'
+      is_skipped: false
+      use_cached_result: true
+      warehouse_type: 'L'
+      databricks_query: "SELECT COUNT(*), AVG(metric) FROM poc.main.example a JOIN poc.main.example2 b ON a.id = b.a_id WHERE b.metric > 100;"
+      snowflake_query: "SELECT COUNT(*), AVG(metric) FROM poc.main.example a JOIN poc.main.example2 b ON a.id = b.a_id WHERE b.metric > 100;"
+
