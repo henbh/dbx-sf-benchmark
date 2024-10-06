@@ -1,13 +1,14 @@
 import hashlib
+import logging
 import os
 import time
 from datetime import datetime
 
 import pandas as pd
+import requests
 import yaml
 from databricks import sql
 from sqlalchemy import create_engine, text
-import logging
 
 
 # Configure Logging
@@ -47,24 +48,20 @@ def run_queries(engine, platform_name, queries, date_filters, user_email, filena
 
                     source_type = query_info.get('source_type', 'combined')
                     use_cached_result = query_info.get('use_cached_result', False)
-                    warehouse_type = query_info.get('warehouse_type', 'S')  # Default to 'S'
+                    warehouse_type = query_info.get('warehouse_type', 'S')
 
                     logging.info(
                         f"\nRunning Query '{query_name}' on {platform_name} using warehouse type '{warehouse_type}'...")
 
-                    # Select the appropriate query based on the platform
                     query_template = query_info.get(f"{platform_name.lower()}_query")
                     if not query_template:
                         logging.warning(f"No query provided for '{query_name}' on {platform_name}. Skipping.")
                         continue
 
-                    # Replace date placeholders
                     formatted_query = query_template
                     logging.info(f"\nFormatted query being executed on {platform_name}:\n{formatted_query}")
 
-                    # Set the warehouse and use_cached_result parameter per query
                     try:
-                        # Switch to the appropriate warehouse
                         warehouse_name = warehouse_mapping.get(warehouse_type)
                         if not warehouse_name:
                             logging.warning(
@@ -78,23 +75,20 @@ def run_queries(engine, platform_name, queries, date_filters, user_email, filena
                         logging.info(f"Snowflake: USE_CACHED_RESULT set to {cached_result_value} for this query.")
                     except Exception as e:
                         logging.error(f"Failed to set warehouse or use_cached_result parameter on {platform_name}: {e}")
-                        continue  # Skip to the next query if we can't set up the environment
+                        continue
 
-                    # Execute the query and measure execution time
                     try:
                         start_time = time.time()
                         result = connection.execute(text(formatted_query))
                         execution_time = time.time() - start_time
 
-                        # Get the query ID
                         query_id = result.cursor.sfqid
 
                         logging.info(f"[{platform_name}] Query executed in {execution_time:.4f} seconds")
                         logging.info(f"[{platform_name}] Query ID: {query_id}")
 
-                        # Prepare the result entry
                         result_entry = {
-                            'guid': query_info.get('guid'),  # Include GUID
+                            'guid': query_info.get('guid'),
                             'category': category_name,
                             'user_email': user_email,
                             'platform': platform_name,
@@ -107,7 +101,6 @@ def run_queries(engine, platform_name, queries, date_filters, user_email, filena
                             'script_execution_time_sec': execution_time
                         }
 
-                        # Append the result to the CSV file
                         df = pd.DataFrame([result_entry])
                         write_mode = 'a' if os.path.exists(filename) else 'w'
                         header = not os.path.exists(filename)
@@ -118,9 +111,8 @@ def run_queries(engine, platform_name, queries, date_filters, user_email, filena
                         error_message = str(e)
                         logging.error(f"[{platform_name}] Failed to execute query '{query_name}': {error_message}")
 
-                        # Prepare the error result entry
                         result_entry = {
-                            'guid': query_info.get('guid'),  # Include GUID even on error
+                            'guid': query_info.get('guid'),
                             'category': category_name,
                             'user_email': user_email,
                             'platform': platform_name,
@@ -134,7 +126,6 @@ def run_queries(engine, platform_name, queries, date_filters, user_email, filena
                             'error_message': error_message
                         }
 
-                        # Append the error result to the CSV file
                         df = pd.DataFrame([result_entry])
                         write_mode = 'a' if os.path.exists(filename) else 'w'
                         header = not os.path.exists(filename)
@@ -152,22 +143,19 @@ def run_queries(engine, platform_name, queries, date_filters, user_email, filena
 
                 source_type = query_info.get('source_type', 'combined')
                 use_cached_result = query_info.get('use_cached_result', False)
-                warehouse_type = query_info.get('warehouse_type', 'S')  # Default to 'S'
+                warehouse_type = query_info.get('warehouse_type', 'S')
 
                 logging.info(
                     f"\nRunning Query '{query_name}' on {platform_name} using warehouse type '{warehouse_type}'...")
 
-                # Select the appropriate query based on the platform
                 query_template = query_info.get(f"{platform_name.lower()}_query")
                 if not query_template:
                     logging.warning(f"No query provided for '{query_name}' on {platform_name}. Skipping.")
                     continue
 
-                # Replace date placeholders
                 formatted_query = query_template.format(**date_filters)
                 logging.info(f"\nFormatted query being executed on {platform_name}:\n{formatted_query}")
 
-                # Get the connection for the specified warehouse type
                 connection = warehouse_mapping.get(warehouse_type)
                 if not connection:
                     logging.warning(f"Warehouse type '{warehouse_type}' not found in configuration. Skipping query.")
@@ -175,29 +163,25 @@ def run_queries(engine, platform_name, queries, date_filters, user_email, filena
 
                 try:
                     cursor = connection.cursor()
-                    # Set the use_cached_result parameter per query
                     try:
                         cached_result_value = 'true' if use_cached_result else 'false'
                         cursor.execute(f"SET use_cached_result = {cached_result_value}")
                         logging.info(f"Databricks: use_cached_result set to {cached_result_value} for this query.")
                     except Exception as e:
                         logging.error(f"Failed to set use_cached_result parameter on {platform_name}: {e}")
-                        continue  # Skip to the next query if we can't set up the environment
+                        continue
 
-                    # Execute the query and measure execution time
                     start_time = time.time()
                     cursor.execute(formatted_query)
                     execution_time = time.time() - start_time
 
-                    # Get the query ID
                     query_id = cursor.query_id
 
                     logging.info(f"[{platform_name}] Query executed in {execution_time:.4f} seconds")
                     logging.info(f"[{platform_name}] Query ID: {query_id}")
 
-                    # Prepare the result entry
                     result_entry = {
-                        'guid': query_info.get('guid'),  # Include GUID
+                        'guid': query_info.get('guid'),
                         'category': category_name,
                         'user_email': user_email,
                         'platform': platform_name,
@@ -210,7 +194,6 @@ def run_queries(engine, platform_name, queries, date_filters, user_email, filena
                         'script_execution_time_sec': execution_time
                     }
 
-                    # Append the result to the CSV file
                     df = pd.DataFrame([result_entry])
                     write_mode = 'a' if os.path.exists(filename) else 'w'
                     header = not os.path.exists(filename)
@@ -221,9 +204,8 @@ def run_queries(engine, platform_name, queries, date_filters, user_email, filena
                     error_message = str(e)
                     logging.error(f"[{platform_name}] Failed to execute query '{query_name}': {error_message}")
 
-                    # Prepare the error result entry
                     result_entry = {
-                        'guid': query_info.get('guid'),  # Include GUID even on error
+                        'guid': query_info.get('guid'),
                         'category': category_name,
                         'user_email': user_email,
                         'platform': platform_name,
@@ -237,7 +219,6 @@ def run_queries(engine, platform_name, queries, date_filters, user_email, filena
                         'error_message': error_message
                     }
 
-                    # Append the error result to the CSV file
                     df = pd.DataFrame([result_entry])
                     write_mode = 'a' if os.path.exists(filename) else 'w'
                     header = not os.path.exists(filename)
@@ -248,7 +229,6 @@ def run_queries(engine, platform_name, queries, date_filters, user_email, filena
                     if 'cursor' in locals():
                         cursor.close()
 
-        # Close all connections
         for conn in warehouse_mapping.values():
             conn.close()
 
@@ -321,7 +301,6 @@ def fetch_snowflake_query_history(engine, query_ids, history_warehouse):
         logging.info("No query_ids provided for fetching query history.")
         return {}
 
-    # Prepare the query with the list of query_ids
     placeholders = ', '.join([f"'{qid}'" for qid in query_ids])
     history_query = f"""
     select 
@@ -330,7 +309,8 @@ def fetch_snowflake_query_history(engine, query_ids, history_warehouse):
         execution_time as execution_time_ms,
         compilation_time as compilation_time_ms, 
         total_elapsed_time as db_total_duration_time_ms, 
-        credits_used_cloud_services as credits_dbus 
+        rows_produced,
+        bytes_scanned 
     from table(information_schema.query_history()) 
     where query_id IN ({placeholders})
     """
@@ -353,7 +333,8 @@ def fetch_snowflake_query_history(engine, query_ids, history_warehouse):
                     'execution_time_ms': row[2],
                     'compilation_time_ms': row[3],
                     'db_total_duration_time_ms': row[4],
-                    'credits_dbus': row[5]
+                    'rows_produced_count': row[5],
+                    'read_bytes_or_bytes_scanned': row[6]
                 }
             return history_dict
     except Exception as e:
@@ -361,9 +342,60 @@ def fetch_snowflake_query_history(engine, query_ids, history_warehouse):
         return {}
 
 
-# Appends total_elapsed_time from Snowflake's query history to the existing CSV.
-def append_snowflake_history_to_csv(engine, filename, warehouse_name):
-    # Read the existing CSV into a DataFrame
+# Fetches total_elapsed_time from Databricks's query history for given query_ids.
+def fetch_databricks_query_history(dbx_host, dbx_token, query_ids):
+    if not query_ids:
+        logging.info("No query_ids provided for fetching query history.")
+        return {}
+
+    url = f"https://{dbx_host}/api/2.0/sql/history/queries"
+    headers = {"Authorization": f"Bearer {dbx_token}"}
+    page = 1
+    limit = 25
+    has_more = True
+    full_list = []
+
+    body = {
+        "filter_by": {
+            "statement_ids": query_ids
+        },
+        "include_metrics": "true"
+    }
+    history_dict = {}
+    try:
+        while has_more and page * limit <= 100000:
+            params = {
+                "limit": limit,
+                "offset": page
+            }
+            response = requests.get(url, headers=headers, params=params, json=body)
+            data = response.json()
+
+            if data["res"] is not None:
+                records = data["res"]
+                full_list.extend(records)
+                page += 1
+                has_more = data.get("has_more", False)
+            else:
+                has_more = False
+
+        for item in full_list:
+            history_dict[item['query_id']] = {
+                'execution_status': item['status'],
+                'execution_time_ms': item['metrics']['execution_time_ms'],
+                'compilation_time_ms': item['metrics']['compilation_time_ms'],
+                'db_total_duration_time_ms': item['metrics']['total_time_ms'],
+                'rows_produced_count': item['metrics']['rows_produced_count'],
+                'read_bytes_or_bytes_scanned': item['metrics']['read_bytes']
+            }
+        return history_dict
+    except Exception as e:
+        logging.error(f"Error fetching query history from Databricks: {e}")
+        return {}
+
+
+# Appends engine's query history details to the existing CSV.
+def enrich_results(engine, filename, platform_name, warehouse_name=None, dbx_host=None, dbx_token=None):
     try:
         df = pd.read_csv(filename)
     except FileNotFoundError:
@@ -373,34 +405,53 @@ def append_snowflake_history_to_csv(engine, filename, warehouse_name):
         logging.error(f"Error reading CSV file '{filename}': {e}")
         return
 
-    # Filter Snowflake queries with non-null query_id
-    snowflake_queries = df[(df['platform'] == 'Snowflake') & (df['query_id'].notnull())]
-    query_ids = snowflake_queries['query_id'].unique().tolist()
+    if platform_name == 'Snowflake':
+        platform_queries = df[(df['platform'] == 'Snowflake') & (df['query_id'].notnull())]
+        query_ids = platform_queries['query_id'].unique().tolist()
 
-    if not query_ids:
-        logging.warning("No Snowflake query_ids found in the CSV. Skipping history fetch.")
+        if not query_ids:
+            logging.warning("No Snowflake query_ids found in the CSV. Skipping history fetch.")
+            return
+
+        logging.info(f"Fetching query history for {len(query_ids)} Snowflake queries...")
+
+        history_dict = fetch_snowflake_query_history(engine, query_ids, warehouse_name)
+
+        if not history_dict:
+            logging.warning("No query history fetched. Skipping append.")
+            return
+
+        history_df = pd.DataFrame.from_dict(history_dict, orient='index').reset_index()
+        history_df = history_df.rename(columns={'index': 'query_id'})
+
+    elif platform_name == 'Databricks':
+        platform_queries = df[(df['platform'] == 'Databricks') & (df['query_id'].notnull())]
+        query_ids = platform_queries['query_id'].unique().tolist()
+
+        if not query_ids:
+            logging.warning("No Databricks query_ids found in the CSV. Skipping history fetch.")
+            return
+
+        logging.info(f"Fetching query history for {len(query_ids)} Databricks queries...")
+
+        history_dict = fetch_databricks_query_history(dbx_host, dbx_token, query_ids)
+
+        if not history_dict:
+            logging.warning("No query history fetched. Skipping append.")
+            return
+
+        history_df = pd.DataFrame.from_dict(history_dict, orient='index').reset_index()
+        history_df = history_df.rename(columns={'index': 'query_id'})
+
+    else:
+        logging.warning(f"Unsupported platform '{platform_name}' for enrichment. Skipping.")
         return
 
-    logging.info(f"Fetching query history for {len(query_ids)} Snowflake queries...")
-
-    # Fetch query history
-    history_dict = fetch_snowflake_query_history(engine, query_ids, warehouse_name)
-
-    if not history_dict:
-        logging.warning("No query history fetched. Skipping append.")
-        return
-
-    # Create a DataFrame from history_dict
-    history_df = pd.DataFrame.from_dict(history_dict, orient='index').reset_index()
-    history_df = history_df.rename(columns={'index': 'query_id'})
-
-    # Merge with the original DataFrame
     df = df.merge(history_df, on='query_id', how='left')
 
-    # Save the updated DataFrame back to CSV
     try:
         df.to_csv(filename, index=False)
-        logging.info(f"Updated CSV with Snowflake query history saved to '{filename}'")
+        logging.info(f"Updated CSV with {platform_name} query history saved to '{filename}'")
     except Exception as e:
         logging.error(f"Error writing updated CSV file '{filename}': {e}")
 
@@ -424,29 +475,26 @@ def assign_guids(queries, platform_name):
 
 # Main function to run benchmark
 def benchmark():
-    # Load configurations
     setup_logging()
-    config = load_config('config/connections.yaml')
+    connections_config = load_config('config/connections.yaml')
     queries_config = load_config('config/queries.yaml')
 
-    date_filters = config.get('date_filters', {})
+    date_filters = connections_config.get('date_filters', {})
     queries = queries_config.get('queries', {})
-    user_email = config.get('user_email', 'unknown@example.com')
+    user_email = connections_config.get('user_email', 'unknown@example.com')
 
-    # Assign GUIDs to all queries for each platform
     platforms = ['Snowflake', 'Databricks']
     for platform in platforms:
-        platform_queries = queries  # Assuming same structure for both platforms
+        platform_queries = queries
         assign_guids(platform_queries, platform)
 
-    # Generate a unique filename with current timestamp including seconds
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"query_benchmark_results_{timestamp}.csv"
 
     platforms = ['Snowflake', 'Databricks']
 
     for platform_name in platforms:
-        connection_config = config.get(platform_name.lower(), {})
+        connection_config = connections_config.get(platform_name.lower(), {})
         if not connection_config:
             logging.warning(f"No configuration found for platform '{platform_name}'. Skipping.")
             continue
@@ -454,15 +502,11 @@ def benchmark():
         logging.info(f"\nConnecting to {platform_name}...")
         try:
             if platform_name == 'Snowflake':
-                # Get the base engine
                 engine = get_snowflake_engine(connection_config)
-                # Get the warehouse mapping
                 warehouse_mapping = connection_config.get('warehouses', {})
             elif platform_name == 'Databricks':
-                # For Databricks, get connections per warehouse type
                 warehouse_mapping = get_databricks_connections(connection_config)
-                # For Databricks, the warehouse_mapping is a dict of connections
-                engine = None  # Not used for Databricks
+                engine = None
             else:
                 logging.warning(f"Unsupported platform '{platform_name}'. Skipping.")
                 continue
@@ -470,15 +514,17 @@ def benchmark():
             logging.error(f"Failed to connect to {platform_name}: {e}")
             continue
 
-        # Run queries
         run_queries(engine, platform_name, queries, date_filters, user_email, filename, warehouse_mapping)
 
+        logging.info(f"\nEnriching benchmark results...")
         if platform_name == 'Snowflake':
-            logging.info(f"\nFetching and appending query history for Snowflake...")
-            # Ensure you have a separate connection for history if needed
-            append_snowflake_history_to_csv(engine, filename, warehouse_name="UNIFIED_POC_XS")
-            # Dispose the engine after use
+            snowflake_history_warehouse = connection_config.get("history_warehouse", "")
+            enrich_results(engine, filename, platform_name='Snowflake', warehouse_name=snowflake_history_warehouse)
             engine.dispose()
+        elif platform_name == 'Databricks':
+            dbx_host = connection_config.get('server_hostname', '').strip()
+            dbx_token = get_env_variable(connection_config.get('access_token', '').strip())
+            enrich_results(None, filename, platform_name='Databricks', dbx_host=dbx_host, dbx_token=dbx_token)
 
     logging.info(f"\nBenchmark completed. Results saved to '{filename}'")
 

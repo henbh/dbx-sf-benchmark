@@ -16,6 +16,7 @@ snowflake:
     M: 'WAREHOUSE_M'
     L: 'WAREHOUSE_L'
     XL: 'WAREHOUSE_XL'
+  history_warehouse: 'HISTORY_WH'
 
 databricks:
   server_hostname: '${DBX_HOST}'
