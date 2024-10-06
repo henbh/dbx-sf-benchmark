@@ -1,4 +1,4 @@
-# DBX-SF Benchmark
+# DBX-SF Benchmark - Databricks vs Snowflake Query Performance
 
 This repository is designed to benchmark query performance between **Databricks** and **Snowflake** for different data sources such as Iceberg and Delta Lake tables. 
 The project supports multiple query categories, customizable execution, and automated logging of results.
@@ -79,8 +79,8 @@ queries:
       is_skipped: false
       use_cached_result: true
       warehouse_type: 'XS'
-      databricks_query: "SELECT COUNT(*) AS total_count FROM poc_unified_data_lake.main.ice_rd_webhook_order;"
-      snowflake_query: "SELECT COUNT(*) AS total_count FROM DW_UNIFORM.ICEBERG.RD_WEBHOOK_ORDER;"
+      databricks_query: "SELECT COUNT(*) AS total_count FROM db.schema.table;"
+      snowflake_query: "SELECT COUNT(*) AS total_count FROM DB.SCHEMA.TABLE;"
   # More categories and queries...
 ```
 
