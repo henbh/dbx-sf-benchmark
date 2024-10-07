@@ -1,4 +1,5 @@
-# DBX-SF Benchmark - Databricks vs Snowflake Query Performance
+# dbx-sf-benchmark
+# Databricks vs Snowflake Query Performance
 
 This repository is designed to benchmark query performance between **Databricks** and **Snowflake** for different data sources such as Iceberg and Delta Lake tables. 
 The project supports multiple query categories, customizable execution, and automated logging of results.
@@ -166,6 +167,21 @@ After executing the queries, the script fetches additional performance metrics f
 - **row_produced_count:** Number of rows produced by the query.
 
 These metrics are appended to the CSV results, enhancing the analysis of query performance between the two platforms.
+
+## Permissions
+Ensure you have the necessary permissions to execute queries and fetch query history on both platforms.
+
+### Databricks
+- **Access Token:** Must have permissions to call SQL API endpoints.
+- **User Role:** At least Viewer role on the SQL warehouses you're querying.
+- **API Access:** Permission to use the Databricks REST API.
+
+### Snowflake
+- **Query History Access:** Permission to access ACCOUNT_USAGE or INFORMATION_SCHEMA views.
+- **Warehouse Usage:** Permission to use the specified warehouses.
+- **User Role:** Sufficient privileges to execute queries and access query history.
+
+**Note:** Contact your administrators if you encounter permission issues.
 
 ## Customization
 
