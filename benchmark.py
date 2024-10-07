@@ -380,13 +380,14 @@ def fetch_databricks_query_history(dbx_host, dbx_token, query_ids):
                 has_more = False
 
         for item in full_list:
+            metrics = item.get("metrics", {})
             history_dict[item['query_id']] = {
                 'execution_status': item['status'],
-                'execution_time_ms': item['metrics']['execution_time_ms'],
-                'compilation_time_ms': item['metrics']['compilation_time_ms'],
-                'db_total_duration_time_ms': item['metrics']['total_time_ms'],
-                'rows_produced_count': item['metrics']['rows_produced_count'],
-                'read_bytes_or_bytes_scanned': item['metrics']['read_bytes']
+                'execution_time_ms': metrics.get('execution_time_ms', None),
+                'compilation_time_ms': metrics.get('compilation_time_ms', None),
+                'db_total_duration_time_ms': metrics.get('total_time_ms', None),
+                'rows_produced_count': metrics.get('rows_produced_count', None),
+                'read_bytes_or_bytes_scanned': metrics.get('read_bytes', None)
             }
         return history_dict
     except Exception as e:
