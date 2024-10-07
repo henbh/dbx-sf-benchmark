@@ -380,13 +380,14 @@ def fetch_databricks_query_history(dbx_host, dbx_token, query_ids):
                 has_more = False
 
         for item in full_list:
+            metrics = item.get("metrics", {})
             history_dict[item['query_id']] = {
                 'execution_status': item['status'],
-                'execution_time_ms': item['metrics']['execution_time_ms'],
-                'compilation_time_ms': item['metrics']['compilation_time_ms'],
-                'db_total_duration_time_ms': item['metrics']['total_time_ms'],
-                'rows_produced_count': item['metrics']['rows_produced_count'],
-                'read_bytes_or_bytes_scanned': item['metrics']['read_bytes']
+                'execution_time_ms': metrics.get('execution_time_ms', None),
+                'compilation_time_ms': metrics.get('compilation_time_ms', None),
+                'db_total_duration_time_ms': metrics.get('total_time_ms', None),
+                'rows_produced_count': metrics.get('rows_produced_count', None),
+                'read_bytes_or_bytes_scanned': metrics.get('read_bytes', None)
             }
         return history_dict
     except Exception as e:
@@ -423,7 +424,7 @@ def enrich_results(engine, filename, platform_name, warehouse_name=None, dbx_hos
 
         history_df = pd.DataFrame.from_dict(history_dict, orient='index').reset_index()
         history_df = history_df.rename(columns={'index': 'query_id'})
-
+        df = df.merge(history_df, on='query_id', how='left')
     elif platform_name == 'Databricks':
         platform_queries = df[(df['platform'] == 'Databricks') & (df['query_id'].notnull())]
         query_ids = platform_queries['query_id'].unique().tolist()
@@ -442,12 +443,33 @@ def enrich_results(engine, filename, platform_name, warehouse_name=None, dbx_hos
 
         history_df = pd.DataFrame.from_dict(history_dict, orient='index').reset_index()
         history_df = history_df.rename(columns={'index': 'query_id'})
+        df = df.merge(history_df, on='query_id', how='left', suffixes=('_df', '_history_df'))
+
+        df['execution_status_df'] = df['execution_status_df'].fillna(df['execution_status_history_df'])
+        df['execution_time_ms_df'] = df['execution_time_ms_df'].fillna(df['execution_time_ms_history_df'])
+        df['compilation_time_ms_df'] = df['compilation_time_ms_df'].fillna(df['compilation_time_ms_history_df'])
+        df['db_total_duration_time_ms_df'] = df['db_total_duration_time_ms_df'].fillna(
+            df['db_total_duration_time_ms_history_df'])
+        df['rows_produced_count_df'] = df['rows_produced_count_df'].fillna(df['rows_produced_count_history_df'])
+        df['read_bytes_or_bytes_scanned_df'] = df['read_bytes_or_bytes_scanned_df'].fillna(
+            df['read_bytes_or_bytes_scanned_history_df'])
+
+        df = df.drop(['execution_status_history_df', 'execution_time_ms_history_df', 'compilation_time_ms_history_df',
+                      'db_total_duration_time_ms_history_df', 'rows_produced_count_history_df',
+                      'read_bytes_or_bytes_scanned_history_df'], axis=1)
+
+        df.rename(columns={
+            'execution_status_df': 'execution_status',
+            'execution_time_ms_df': 'execution_time_ms',
+            'compilation_time_ms_df': 'compilation_time_ms',
+            'db_total_duration_time_ms_df': 'db_total_duration_time_ms',
+            'rows_produced_count_df': 'rows_produced_count',
+            'read_bytes_or_bytes_scanned_df': 'read_bytes_or_bytes_scanned'
+        }, inplace=True)
 
     else:
         logging.warning(f"Unsupported platform '{platform_name}' for enrichment. Skipping.")
         return
-
-    df = df.merge(history_df, on='query_id', how='left')
 
     try:
         df.to_csv(filename, index=False)
