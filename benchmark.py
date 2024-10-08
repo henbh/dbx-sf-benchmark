@@ -10,6 +10,19 @@ import yaml
 from databricks import sql
 from sqlalchemy import create_engine, text
 
+warehouse_order = {
+    '2XS': 1,
+    'XS': 2,
+    'S': 3,
+    'M': 4,
+    'L': 5,
+    'XL': 6,
+    '2XL': 7,
+    '3XL': 8,
+    '4XL': 9,
+    '5XL': 10
+}
+
 
 # Configure Logging
 def setup_logging():
@@ -34,8 +47,16 @@ def load_config(file_path):
         return yaml.safe_load(file)
 
 
+def get_adjusted_warehouse_type(warehouse_type, warehouse_sizes):
+    idx = warehouse_sizes.index(warehouse_type)
+    if idx == 0:
+        return warehouse_sizes[0]
+    else:
+        return warehouse_sizes[idx - 1]
+
+
 # Function to run queries and collect performance metrics
-def run_queries(engine, platform_name, queries, date_filters, user_email, filename, warehouse_mapping):
+def run_queries(engine, platform_name, queries, date_filters, user_email, filename, warehouse_mapping, warehouse_sizes):
     if platform_name == 'Snowflake':
         with engine.connect() as connection:
             for category_name, queries_list in queries.items():
@@ -145,8 +166,10 @@ def run_queries(engine, platform_name, queries, date_filters, user_email, filena
                 use_cached_result = query_info.get('use_cached_result', False)
                 warehouse_type = query_info.get('warehouse_type', 'S')
 
+                adjusted_warehouse_type = get_adjusted_warehouse_type(warehouse_type, warehouse_sizes)
+
                 logging.info(
-                    f"\nRunning Query '{query_name}' on {platform_name} using warehouse type '{warehouse_type}'...")
+                    f"\nRunning Query '{query_name}' on {platform_name} using warehouse type '{adjusted_warehouse_type}'...")
 
                 query_template = query_info.get(f"{platform_name.lower()}_query")
                 if not query_template:
@@ -156,10 +179,17 @@ def run_queries(engine, platform_name, queries, date_filters, user_email, filena
                 formatted_query = query_template.format(**date_filters)
                 logging.info(f"\nFormatted query being executed on {platform_name}:\n{formatted_query}")
 
-                connection = warehouse_mapping.get(warehouse_type)
+                connection = warehouse_mapping.get(adjusted_warehouse_type)
                 if not connection:
-                    logging.warning(f"Warehouse type '{warehouse_type}' not found in configuration. Skipping query.")
-                    continue
+                    smallest_size = warehouse_sizes[0]
+                    connection = warehouse_mapping.get(smallest_size)
+                    if connection:
+                        logging.warning(
+                            f"Adjusted warehouse type '{adjusted_warehouse_type}' not found. Using smallest available warehouse '{smallest_size}'.")
+                    else:
+                        logging.warning(
+                            f"No available warehouse found for '{adjusted_warehouse_type}'. Skipping query.")
+                        continue
 
                 try:
                     cursor = connection.cursor()
@@ -185,7 +215,7 @@ def run_queries(engine, platform_name, queries, date_filters, user_email, filena
                         'category': category_name,
                         'user_email': user_email,
                         'platform': platform_name,
-                        'warehouse_type': warehouse_type,
+                        'warehouse_type': adjusted_warehouse_type,
                         'use_cached_result': use_cached_result,
                         'source_type': source_type,
                         'query_id': query_id,
@@ -283,8 +313,11 @@ def get_databricks_connections(cfg):
     access_token = get_env_variable(cfg.get('access_token', '').strip())
     http_paths = cfg.get('http_paths', {})
 
+    warehouse_sizes = sorted(http_paths.keys(), key=lambda x: warehouse_order.get(x, float('inf')))
+
     connections = {}
-    for size, http_path in http_paths.items():
+    for size in warehouse_sizes:
+        http_path = http_paths[size]
         conn = sql.connect(
             server_hostname=server_hostname,
             http_path=http_path,
@@ -292,7 +325,7 @@ def get_databricks_connections(cfg):
         )
         connections[size] = conn
 
-    return connections
+    return connections, warehouse_sizes
 
 
 # Fetches total_elapsed_time from Snowflake's query history for given query_ids.
@@ -526,8 +559,9 @@ def benchmark():
             if platform_name == 'Snowflake':
                 engine = get_snowflake_engine(connection_config)
                 warehouse_mapping = connection_config.get('warehouses', {})
+                warehouse_sizes = None
             elif platform_name == 'Databricks':
-                warehouse_mapping = get_databricks_connections(connection_config)
+                warehouse_mapping, warehouse_sizes = get_databricks_connections(connection_config)
                 engine = None
             else:
                 logging.warning(f"Unsupported platform '{platform_name}'. Skipping.")
@@ -536,7 +570,8 @@ def benchmark():
             logging.error(f"Failed to connect to {platform_name}: {e}")
             continue
 
-        run_queries(engine, platform_name, queries, date_filters, user_email, filename, warehouse_mapping)
+        run_queries(engine, platform_name, queries, date_filters, user_email, filename, warehouse_mapping,
+                    warehouse_sizes)
 
         logging.info(f"\nEnriching benchmark results...")
         if platform_name == 'Snowflake':
