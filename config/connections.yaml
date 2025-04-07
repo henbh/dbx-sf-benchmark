@@ -6,24 +6,68 @@ user_email: 'email@example.com'
 # Platform-specific connection configurations
 snowflake:
   user: '${SF_USER}'
-  password: '${SF_PASSWORD}'  # Use environment variable
+  password: '${SF_PASSWORD}'
   account: '${SF_ACCOUNT}'
   database: '${SF_DATABASE}'
   schema: '${SF_SCHEMA}'
   warehouses:
-    XS: 'WAREHOUSE_XS'
-    S: 'WAREHOUSE_S'
-    M: 'WAREHOUSE_M'
-    L: 'WAREHOUSE_L'
-    XL: 'WAREHOUSE_XL'
-  history_warehouse: 'HISTORY_WH'
+    XS:
+      name: 'WAREHOUSE_XS'
+      price_per_hour: 1
+    S:
+      name: 'WAREHOUSE_S'
+      price_per_hour: 2
+    M:
+      name: 'WAREHOUSE_M'
+      price_per_hour: 3
+    L:
+      name: 'WAREHOUSE_L'
+      price_per_hour: 4
+    XL:
+      name: 'WAREHOUSE_XL'
+      price_per_hour: 5
+    2XL:
+      name: 'WAREHOUSE_2XL'
+      price_per_hour: 6
+    3XL:
+      name: 'WAREHOUSE_3XL'
+      price_per_hour: 7
+    4XL:
+      name: 'WAREHOUSE_4XL'
+      price_per_hour: 8
+    5XL:
+      name: 'WAREHOUSE_5XL'
+      price_per_hour: 9
+  history_warehouse: 'WAREHOUSE_XS'
 
 databricks:
   server_hostname: '${DBX_HOST}'
-  access_token: '${DBX_TOKEN}'  # Use environment variable
+  access_token: '${DBX_TOKEN}'
   http_paths:
-    XS: '/sql/1.0/warehouses/1234'
-    S: '/sql/1.0/warehouses/5678'
-    M: '/sql/1.0/warehouses/9012'
-    L: '/sql/1.0/warehouses/3456'
-    XL: '/sql/1.0/warehouses/7890'
+    2XS:
+      path: '/sql/1.0/warehouses/blabla'
+      price_per_hour: 1
+    XS:
+      path: '/sql/1.0/warehouses/blabla'
+      price_per_hour: 2
+    S:
+      path: '/sql/1.0/warehouses/blabla'
+      price_per_hour: 3
+    M:
+      path: '/sql/1.0/warehouses/blabla'
+      price_per_hour: 4
+    L:
+      path: '/sql/1.0/warehouses/blabla'
+      price_per_hour: 5
+    XL:
+      path: '/sql/1.0/warehouses/blabla'
+      price_per_hour: 6
+    2XL:
+      path: '/sql/1.0/warehouses/blabla'
+      price_per_hour: 7
+    3XL:
+      path: '/sql/1.0/warehouses/blabla'
+      price_per_hour: 8
+    4XL:
+      path: '/sql/1.0/warehouses/blabla'
+      price_per_hour: 9

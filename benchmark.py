@@ -83,7 +83,8 @@ def run_queries(engine, platform_name, queries, date_filters, user_email, filena
                     logging.info(f"\nFormatted query being executed on {platform_name}:\n{formatted_query}")
 
                     try:
-                        warehouse_name = warehouse_mapping.get(warehouse_type)
+                        warehouse_details = warehouse_mapping.get(warehouse_type, {})
+                        warehouse_name = warehouse_details.get('name')
                         if not warehouse_name:
                             logging.warning(
                                 f"Warehouse type '{warehouse_type}' not found in configuration. Skipping query.")
@@ -119,7 +120,8 @@ def run_queries(engine, platform_name, queries, date_filters, user_email, filena
                             'query_id': query_id,
                             'query': formatted_query,
                             'query_name': query_name,
-                            'script_execution_time_sec': execution_time
+                            'script_execution_time_sec': execution_time,
+                            'error_message': None
                         }
 
                         df = pd.DataFrame([result_entry])
@@ -179,11 +181,16 @@ def run_queries(engine, platform_name, queries, date_filters, user_email, filena
                 formatted_query = query_template.format(**date_filters)
                 logging.info(f"\nFormatted query being executed on {platform_name}:\n{formatted_query}")
 
-                connection = warehouse_mapping.get(adjusted_warehouse_type)
+                connection_details = warehouse_mapping.get(adjusted_warehouse_type)
+                if connection_details:
+                    connection = connection_details.get('connection')
+                else:
+                    connection = None
                 if not connection:
                     smallest_size = warehouse_sizes[0]
-                    connection = warehouse_mapping.get(smallest_size)
-                    if connection:
+                    connection_details = warehouse_mapping.get(smallest_size)
+                    if connection_details:
+                        connection = connection_details.get('connection')
                         logging.warning(
                             f"Adjusted warehouse type '{adjusted_warehouse_type}' not found. Using smallest available warehouse '{smallest_size}'.")
                     else:
@@ -221,7 +228,8 @@ def run_queries(engine, platform_name, queries, date_filters, user_email, filena
                         'query_id': query_id,
                         'query': formatted_query,
                         'query_name': query_name,
-                        'script_execution_time_sec': execution_time
+                        'script_execution_time_sec': execution_time,
+                        'error_message': None
                     }
 
                     df = pd.DataFrame([result_entry])
@@ -259,8 +267,10 @@ def run_queries(engine, platform_name, queries, date_filters, user_email, filena
                     if 'cursor' in locals():
                         cursor.close()
 
-        for conn in warehouse_mapping.values():
-            conn.close()
+        for conn_details in warehouse_mapping.values():
+            conn = conn_details.get('connection')
+            if conn:
+                conn.close()
 
 
 # Retrieve the value from environment variables if specified
@@ -428,8 +438,30 @@ def fetch_databricks_query_history(dbx_host, dbx_token, query_ids):
         return {}
 
 
+def calculate_cost_per_query(df, platform_name, warehouse_mapping):
+    # df['cost_per_query'] = None
+
+    for warehouse_type in df[df['platform'] == platform_name]['warehouse_type'].unique():
+        warehouse_details = warehouse_mapping.get(warehouse_type, {})
+        price_per_hour = warehouse_details.get('price_per_hour')
+
+        if price_per_hour is None:
+            logging.info(
+                f"No price_per_hour specified for warehouse type '{warehouse_type}' on {platform_name}. Skipping cost calculation for these queries.")
+            continue
+
+        warehouse_df = df[(df['platform'] == platform_name) & (df['warehouse_type'] == warehouse_type)]
+        duration_in_hours = warehouse_df['db_total_duration_time_ms'] / 3600000
+        duration_in_hours = duration_in_hours.fillna(0)
+        cost = duration_in_hours * price_per_hour
+        df.loc[warehouse_df.index, 'cost_per_query'] = cost.round(6)
+
+    return df
+
+
 # Appends engine's query history details to the existing CSV.
-def enrich_results(engine, filename, platform_name, warehouse_name=None, dbx_host=None, dbx_token=None):
+def enrich_results(engine, filename, platform_name, warehouse_mapping, history_warehouse=None, dbx_host=None,
+                   dbx_token=None):
     try:
         df = pd.read_csv(filename)
     except FileNotFoundError:
@@ -449,7 +481,7 @@ def enrich_results(engine, filename, platform_name, warehouse_name=None, dbx_hos
 
         logging.info(f"Fetching query history for {len(query_ids)} Snowflake queries...")
 
-        history_dict = fetch_snowflake_query_history(engine, query_ids, warehouse_name)
+        history_dict = fetch_snowflake_query_history(engine, query_ids, history_warehouse)
 
         if not history_dict:
             logging.warning("No query history fetched. Skipping append.")
@@ -458,6 +490,7 @@ def enrich_results(engine, filename, platform_name, warehouse_name=None, dbx_hos
         history_df = pd.DataFrame.from_dict(history_dict, orient='index').reset_index()
         history_df = history_df.rename(columns={'index': 'query_id'})
         df = df.merge(history_df, on='query_id', how='left')
+        df = calculate_cost_per_query(df, platform_name, warehouse_mapping)
     elif platform_name == 'Databricks':
         platform_queries = df[(df['platform'] == 'Databricks') & (df['query_id'].notnull())]
         query_ids = platform_queries['query_id'].unique().tolist()
@@ -499,7 +532,7 @@ def enrich_results(engine, filename, platform_name, warehouse_name=None, dbx_hos
             'rows_produced_count_df': 'rows_produced_count',
             'read_bytes_or_bytes_scanned_df': 'read_bytes_or_bytes_scanned'
         }, inplace=True)
-
+        df = calculate_cost_per_query(df, platform_name, warehouse_mapping)
     else:
         logging.warning(f"Unsupported platform '{platform_name}' for enrichment. Skipping.")
         return
@@ -528,6 +561,45 @@ def assign_guids(queries, platform_name):
                 logging.info(f"Using existing GUID {query['guid']} for query '{query['name']}' on {platform_name}.")
 
 
+def get_snowflake_warehouse_mapping(cfg):
+    warehouses_cfg = cfg.get('warehouses', {})
+    warehouse_mapping = {}
+    for size, details in warehouses_cfg.items():
+        warehouse_mapping[size] = {
+            'name': details.get('name'),
+            'price_per_hour': details.get('price_per_hour')
+        }
+    return warehouse_mapping
+
+
+def get_databricks_connections(cfg):
+    server_hostname = cfg.get('server_hostname', '').strip()
+    access_token = get_env_variable(cfg.get('access_token', '').strip())
+    http_paths = cfg.get('http_paths', {})
+
+    # Extract warehouse sizes and sort them
+    warehouse_sizes = sorted(http_paths.keys(), key=lambda x: warehouse_order.get(x, float('inf')))
+
+    connections = {}
+    warehouse_mapping = {}
+    for size in warehouse_sizes:
+        details = http_paths[size]
+        http_path = details.get('path')
+        price_per_hour = details.get('price_per_hour')
+        conn = sql.connect(
+            server_hostname=server_hostname,
+            http_path=http_path,
+            access_token=access_token
+        )
+        connections[size] = conn
+        warehouse_mapping[size] = {
+            'connection': conn,
+            'price_per_hour': price_per_hour
+        }
+
+    return warehouse_mapping, warehouse_sizes
+
+
 # Main function to run benchmark
 def benchmark():
     setup_logging()
@@ -538,15 +610,15 @@ def benchmark():
     queries = queries_config.get('queries', {})
     user_email = connections_config.get('user_email', 'unknown@example.com')
 
+    # Assign GUIDs to queries
     platforms = ['Snowflake', 'Databricks']
     for platform in platforms:
         platform_queries = queries
         assign_guids(platform_queries, platform)
 
+    # Generate a timestamped filename for the results
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"query_benchmark_results_{timestamp}.csv"
-
-    platforms = ['Snowflake', 'Databricks']
 
     for platform_name in platforms:
         connection_config = connections_config.get(platform_name.lower(), {})
@@ -557,10 +629,12 @@ def benchmark():
         logging.info(f"\nConnecting to {platform_name}...")
         try:
             if platform_name == 'Snowflake':
+                # Establish Snowflake connection
                 engine = get_snowflake_engine(connection_config)
-                warehouse_mapping = connection_config.get('warehouses', {})
-                warehouse_sizes = None
+                warehouse_mapping = get_snowflake_warehouse_mapping(connection_config)
+                warehouse_sizes = sorted(warehouse_mapping.keys(), key=lambda x: warehouse_order.get(x, float('inf')))
             elif platform_name == 'Databricks':
+                # Establish Databricks connections
                 warehouse_mapping, warehouse_sizes = get_databricks_connections(connection_config)
                 engine = None
             else:
@@ -570,18 +644,26 @@ def benchmark():
             logging.error(f"Failed to connect to {platform_name}: {e}")
             continue
 
+        # Run queries on the platform
         run_queries(engine, platform_name, queries, date_filters, user_email, filename, warehouse_mapping,
                     warehouse_sizes)
 
         logging.info(f"\nEnriching benchmark results...")
         if platform_name == 'Snowflake':
+            # Enrich results with Snowflake query history
             snowflake_history_warehouse = connection_config.get("history_warehouse", "")
-            enrich_results(engine, filename, platform_name='Snowflake', warehouse_name=snowflake_history_warehouse)
+            enrich_results(engine, filename, platform_name='Snowflake', warehouse_mapping=warehouse_mapping,
+                           history_warehouse=snowflake_history_warehouse)
             engine.dispose()
         elif platform_name == 'Databricks':
+            # Enrich results with Databricks query history
             dbx_host = connection_config.get('server_hostname', '').strip()
             dbx_token = get_env_variable(connection_config.get('access_token', '').strip())
-            enrich_results(None, filename, platform_name='Databricks', dbx_host=dbx_host, dbx_token=dbx_token)
+            enrich_results(None, filename, platform_name='Databricks', warehouse_mapping=warehouse_mapping,
+                           dbx_host=dbx_host, dbx_token=dbx_token)
+        else:
+            logging.warning(f"Unsupported platform '{platform_name}'. Skipping.")
+            continue
 
     logging.info(f"\nBenchmark completed. Results saved to '{filename}'")
 
